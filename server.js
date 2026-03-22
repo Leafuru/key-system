@@ -1,9 +1,12 @@
 const express = require("express");
+const https = require("https");
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ---- KEY STORE ----
+// ---- SCRIPT URL (change this from dashboard) ----
+let scriptUrl = "https://pastebin.com/raw/YOURPASTEBINID";
+
 let keys = {
     "TEST-123": { hwid: null, roblox: null, expires: Date.now() + 1000*60*60*24 },
     "VIP-999":  { hwid: null, roblox: null, expires: Date.now() + 1000*60*60*24*7 }
@@ -25,11 +28,16 @@ app.get("/verify", (req, res) => {
     return res.send("VALID");
 });
 
-// ---- SCRIPT ----
+// ---- SCRIPT (fetches from your stored URL) ----
 app.get("/script", (req, res) => {
     const { key, hwid } = req.query;
     if (!keys[key] || keys[key].hwid !== hwid || keys[key].revoked) return res.send("NO");
-    res.send(`print("Script loaded for " .. game.Players.LocalPlayer.Name)`);
+
+    https.get(scriptUrl, (r) => {
+        let data = "";
+        r.on("data", chunk => data += chunk);
+        r.on("end", () => res.send(data));
+    }).on("error", () => res.send("-- script load error"));
 });
 
 // ---- DASHBOARD ----
@@ -76,32 +84,57 @@ app.get("/dashboard", (req, res) => {
   button { background:#333; color:#eee; border:none; padding:4px 10px; cursor:pointer; border-radius:4px; }
   button:hover { background:#555; }
   input[type=text] { background:#222; color:#eee; border:1px solid #444; padding:6px; border-radius:4px; }
-  .add-form { margin-top:24px; display:flex; gap:10px; align-items:center; }
-  .add-form input { width:160px; }
+  .section { margin-top:28px; }
   .green { background:#16a34a; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+  .row input { width:400px; }
 </style>
 </head>
 <body>
 <h1>🔑 Key Dashboard</h1>
+
 <table>
   <tr><th>Key</th><th>Roblox</th><th>HWID</th><th>Expires</th><th>Status</th><th>Actions</th></tr>
   ${rows}
 </table>
 
-<div class="add-form">
-  <form method="POST" action="/add-key" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <input type="text" name="key" placeholder="Key name e.g. KEY-001" required>
-    <select name="days" style="background:#222;color:#eee;border:1px solid #444;padding:6px;border-radius:4px">
-      <option value="1">1 Day</option>
-      <option value="7">7 Days</option>
-      <option value="30">30 Days</option>
-      <option value="365">1 Year</option>
-    </select>
-    <button type="submit" class="green">+ Add Key</button>
+<div class="section">
+  <h2>➕ Add Key</h2>
+  <form method="POST" action="/add-key">
+    <div class="row">
+      <input type="text" name="key" placeholder="Key name e.g. KEY-001" required>
+      <select name="days" style="background:#222;color:#eee;border:1px solid #444;padding:6px;border-radius:4px">
+        <option value="1">1 Day</option>
+        <option value="7">7 Days</option>
+        <option value="30">30 Days</option>
+        <option value="365">1 Year</option>
+      </select>
+      <button type="submit" class="green">+ Add Key</button>
+    </div>
   </form>
 </div>
+
+<div class="section">
+  <h2>📦 Script URL</h2>
+  <p style="color:#aaa;font-size:13px">This is the raw script URL your loader fetches. Change it here anytime to update what script runs — no need to touch the Lua loader.</p>
+  <form method="POST" action="/set-script">
+    <div class="row">
+      <input type="text" name="url" value="${scriptUrl}" placeholder="https://pastebin.com/raw/...">
+      <button type="submit" class="green">Update Script</button>
+    </div>
+  </form>
+  <p style="color:#555;font-size:12px;margin-top:6px">Current: ${scriptUrl}</p>
+</div>
+
 </body>
 </html>`);
+});
+
+// ---- SET SCRIPT URL ----
+app.post("/set-script", (req, res) => {
+    const { url } = req.body;
+    if (url) scriptUrl = url;
+    res.redirect("/dashboard");
 });
 
 // ---- ADD KEY ----
