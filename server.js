@@ -1,14 +1,57 @@
 const express = require("express");
 const https = require("https");
 const crypto = require("crypto");
+const { MongoClient } = require("mongodb");
 const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const DASHBOARD_PASS = "LEAFISTHEGOAT123";
+const MONGODB_URI = process.env.MONGODB_URI;
 let scriptUrl = "https://pastebin.com/raw/YOURPASTEBINID";
 let keys = {};
+
+// ---- DB SETUP ----
+const client = new MongoClient(MONGODB_URI);
+let keysCollection;
+
+async function connectDB() {
+    try {
+        await client.connect();
+        const db = client.db("keysystem");
+        keysCollection = db.collection("keys");
+        const allKeys = await keysCollection.find({}).toArray();
+        for (const k of allKeys) {
+            keys[k._id] = k.data;
+        }
+        console.log("DB connected, loaded", Object.keys(keys).length, "keys");
+    } catch(e) {
+        console.error("DB connection failed:", e);
+    }
+}
+
+async function saveKey(keyId, data) {
+    try {
+        await keysCollection.replaceOne(
+            { _id: keyId },
+            { _id: keyId, data },
+            { upsert: true }
+        );
+    } catch(e) {
+        console.error("Save key failed:", e);
+    }
+}
+
+async function deleteKey(keyId) {
+    try {
+        await keysCollection.deleteOne({ _id: keyId });
+    } catch(e) {
+        console.error("Delete key failed:", e);
+    }
+}
+
+connectDB();
 
 function generateKey() {
     const seg = () => crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -36,6 +79,7 @@ app.get("/verify", (req, res) => {
     if (!d.hwid) {
         d.hwid = hwid;
         d.roblox = username || "Unknown";
+        saveKey(key, d);
         return res.send("BOUND");
     }
     if (d.hwid !== hwid) return res.send("HWID_MISMATCH");
@@ -166,7 +210,7 @@ app.get("/dashboard", checkAuth, (req, res) => {
   <p style="color:#555;font-size:12px;margin-bottom:12px">Paste the contents of your exported keys.json below.</p>
   <form method="POST" action="/import">
     <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
-    <textarea name="data" rows="6" style="width:100%;background:#111;color:#eee;border:1px solid #2a2a2a;padding:8px;border-radius:4px;font-family:monospace;font-size:12px" placeholder='Paste keys.json contents here...'></textarea>
+    <textarea name="data" rows="6" style="width:100%;background:#111;color:#eee;border:1px solid #2a2a2a;padding:8px;border-radius:4px;font-family:monospace;font-size:12px" placeholder="Paste keys.json contents here..."></textarea>
     <br><br>
     <button type="submit" class="blue">Import</button>
   </form>
@@ -190,39 +234,51 @@ app.get("/dashboard", checkAuth, (req, res) => {
 });
 
 // ---- GENERATE KEY ----
-app.post("/generate-key", checkAuth, (req, res) => {
+app.post("/generate-key", checkAuth, async (req, res) => {
     const { days } = req.body;
     const key = generateKey();
-    keys[key] = { hwid: null, roblox: null, expires: Date.now() + 1000*60*60*24 * parseInt(days || 7) };
+    const data = { hwid: null, roblox: null, expires: Date.now() + 1000*60*60*24 * parseInt(days || 7) };
+    keys[key] = data;
+    await saveKey(key, data);
     res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 // ---- ADD CUSTOM KEY ----
-app.post("/add-key", checkAuth, (req, res) => {
+app.post("/add-key", checkAuth, async (req, res) => {
     const { key, days } = req.body;
     if (!key) return res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
-    keys[key] = { hwid: null, roblox: null, expires: Date.now() + 1000*60*60*24 * parseInt(days || 7) };
+    const data = { hwid: null, roblox: null, expires: Date.now() + 1000*60*60*24 * parseInt(days || 7) };
+    keys[key] = data;
+    await saveKey(key, data);
     res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 // ---- REVOKE ----
-app.post("/revoke", checkAuth, (req, res) => {
+app.post("/revoke", checkAuth, async (req, res) => {
     const { key } = req.body;
-    if (keys[key]) keys[key].revoked = true;
+    if (keys[key]) {
+        keys[key].revoked = true;
+        await saveKey(key, keys[key]);
+    }
     res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 // ---- RESET HWID ----
-app.post("/reset-hwid", checkAuth, (req, res) => {
+app.post("/reset-hwid", checkAuth, async (req, res) => {
     const { key } = req.body;
-    if (keys[key]) { keys[key].hwid = null; keys[key].roblox = null; }
+    if (keys[key]) {
+        keys[key].hwid = null;
+        keys[key].roblox = null;
+        await saveKey(key, keys[key]);
+    }
     res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 // ---- DELETE ----
-app.post("/delete-key", checkAuth, (req, res) => {
+app.post("/delete-key", checkAuth, async (req, res) => {
     const { key } = req.body;
     delete keys[key];
+    await deleteKey(key);
     res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
@@ -241,10 +297,13 @@ app.get("/export", checkAuth, (req, res) => {
 });
 
 // ---- IMPORT ----
-app.post("/import", checkAuth, (req, res) => {
+app.post("/import", checkAuth, async (req, res) => {
     try {
         const imported = JSON.parse(req.body.data);
-        keys = { ...keys, ...imported };
+        for (const k in imported) {
+            keys[k] = imported[k];
+            await saveKey(k, imported[k]);
+        }
         console.log("Imported:", Object.keys(imported).length, "keys");
     } catch(e) {
         console.error("Import failed:", e);
