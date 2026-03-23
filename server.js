@@ -15,17 +15,27 @@ let keys = {};
 // ---- DB SETUP ----
 const client = new MongoClient(MONGODB_URI);
 let keysCollection;
+let configCollection;
 
 async function connectDB() {
     try {
         await client.connect();
         const db = client.db("keysystem");
         keysCollection = db.collection("keys");
+        configCollection = db.collection("config");
+
+        // load keys
         const allKeys = await keysCollection.find({}).toArray();
         for (const k of allKeys) {
             keys[k._id] = k.data;
         }
+
+        // load script url
+        const config = await configCollection.findOne({ _id: "scriptUrl" });
+        if (config) scriptUrl = config.value;
+
         console.log("DB connected, loaded", Object.keys(keys).length, "keys");
+        console.log("Script URL:", scriptUrl);
     } catch(e) {
         console.error("DB connection failed:", e);
     }
@@ -48,6 +58,18 @@ async function deleteKey(keyId) {
         await keysCollection.deleteOne({ _id: keyId });
     } catch(e) {
         console.error("Delete key failed:", e);
+    }
+}
+
+async function saveScriptUrl(url) {
+    try {
+        await configCollection.replaceOne(
+            { _id: "scriptUrl" },
+            { _id: "scriptUrl", value: url },
+            { upsert: true }
+        );
+    } catch(e) {
+        console.error("Save scriptUrl failed:", e);
     }
 }
 
@@ -218,7 +240,7 @@ app.get("/dashboard", checkAuth, (req, res) => {
 
 <div class="section">
   <h2>📦 Script URL</h2>
-  <p style="color:#555;font-size:12px;margin-bottom:12px">Raw script URL to load for all valid keys.</p>
+  <p style="color:#555;font-size:12px;margin-bottom:12px">Raw script URL to load for all valid keys. Saved permanently.</p>
   <form method="POST" action="/set-script">
     <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
     <div class="row">
@@ -283,9 +305,12 @@ app.post("/delete-key", checkAuth, async (req, res) => {
 });
 
 // ---- SET SCRIPT URL ----
-app.post("/set-script", checkAuth, (req, res) => {
+app.post("/set-script", checkAuth, async (req, res) => {
     const { url } = req.body;
-    if (url) scriptUrl = url;
+    if (url) {
+        scriptUrl = url;
+        await saveScriptUrl(url);
+    }
     res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
