@@ -1,14 +1,12 @@
 const express = require("express");
 const https = require("https");
 const crypto = require("crypto");
-const multer = require("multer");
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const DASHBOARD_PASS = "LEAFISTHEGOAT123"; // change this, you shared the old one publicly
+const DASHBOARD_PASS = "LEAFISTHEGOAT123";
 let scriptUrl = "https://pastebin.com/raw/YOURPASTEBINID";
 let keys = {};
 
@@ -19,7 +17,7 @@ function generateKey() {
 
 function checkAuth(req, res, next) {
     const pass = req.query.pass || req.body.pass;
-    if (pass !== DASHBOARD_PASS) {
+    if (!pass || pass !== DASHBOARD_PASS) {
         return res.status(401).send("Unauthorized");
     }
     next();
@@ -103,7 +101,7 @@ app.get("/dashboard", checkAuth, (req, res) => {
   tr:hover td { background:#111; }
   button { background:#1f1f1f; color:#ccc; border:none; padding:4px 10px; cursor:pointer; border-radius:4px; font-size:12px; }
   button:hover { background:#2a2a2a; }
-  input[type=text] { background:#111; color:#eee; border:1px solid #2a2a2a; padding:7px 10px; border-radius:4px; font-size:13px; }
+  input[type=text], textarea { background:#111; color:#eee; border:1px solid #2a2a2a; padding:7px 10px; border-radius:4px; font-size:13px; }
   select { background:#111; color:#eee; border:1px solid #2a2a2a; padding:7px 10px; border-radius:4px; font-size:13px; }
   .section { margin-top:28px; background:#0f0f0f; border:1px solid #1a1a1a; padding:20px; border-radius:8px; }
   .section h2 { font-size:14px; color:#aaa; margin-bottom:14px; font-weight:500; }
@@ -113,23 +111,16 @@ app.get("/dashboard", checkAuth, (req, res) => {
   .blue:hover { background:#1e40af !important; }
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .hint { color:#333; font-size:11px; margin-top:10px; font-family:monospace; }
-  .toolbar { display:flex; gap:8px; margin-bottom:16px; }
 </style>
 </head>
 <body>
 <h1>🔑 Key Dashboard</h1>
 <p class="sub">Manage your license keys</p>
 
-<div class="toolbar">
+<div style="margin-bottom:16px">
   <a href="/export?pass=${DASHBOARD_PASS}" style="text-decoration:none">
     <button class="blue">⬇ Export Keys</button>
   </a>
-  <form method="POST" action="/import?pass=${DASHBOARD_PASS}" enctype="multipart/form-data" style="display:inline">
-    <label style="cursor:pointer">
-      <button type="button" class="blue" onclick="this.parentElement.querySelector('input').click()">⬆ Import Keys</button>
-      <input type="file" name="file" accept=".json" style="display:none" onchange="this.parentElement.submit()">
-    </label>
-  </form>
 </div>
 
 <table>
@@ -171,7 +162,19 @@ app.get("/dashboard", checkAuth, (req, res) => {
 </div>
 
 <div class="section">
+  <h2>⬆ Import Keys</h2>
+  <p style="color:#555;font-size:12px;margin-bottom:12px">Paste the contents of your exported keys.json below.</p>
+  <form method="POST" action="/import">
+    <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
+    <textarea name="data" rows="6" style="width:100%;background:#111;color:#eee;border:1px solid #2a2a2a;padding:8px;border-radius:4px;font-family:monospace;font-size:12px" placeholder='Paste keys.json contents here...'></textarea>
+    <br><br>
+    <button type="submit" class="blue">Import</button>
+  </form>
+</div>
+
+<div class="section">
   <h2>📦 Script URL</h2>
+  <p style="color:#555;font-size:12px;margin-bottom:12px">Raw script URL to load for all valid keys.</p>
   <form method="POST" action="/set-script">
     <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
     <div class="row">
@@ -238,10 +241,11 @@ app.get("/export", checkAuth, (req, res) => {
 });
 
 // ---- IMPORT ----
-app.post("/import", checkAuth, upload.single("file"), (req, res) => {
+app.post("/import", checkAuth, (req, res) => {
     try {
-        const imported = JSON.parse(req.file.buffer.toString());
+        const imported = JSON.parse(req.body.data);
         keys = { ...keys, ...imported };
+        console.log("Imported:", Object.keys(imported).length, "keys");
     } catch(e) {
         console.error("Import failed:", e);
     }
