@@ -5,6 +5,8 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const DASHBOARD_PASS = "LEAFISTHEGOAT123@"; // change this
+
 let scriptUrl = "https://pastebin.com/raw/YOURPASTEBINID";
 let keys = {};
 
@@ -13,7 +15,15 @@ function generateKey() {
     return `${seg()}-${seg()}-${seg()}`;
 }
 
-// ---- PING (for UptimeRobot) ----
+function checkAuth(req, res, next) {
+    const pass = req.query.pass || req.body.pass;
+    if (pass !== DASHBOARD_PASS) {
+        return res.status(401).send("Unauthorized");
+    }
+    next();
+}
+
+// ---- PING ----
 app.get("/", (req, res) => res.send("ok"));
 
 // ---- VERIFY ----
@@ -44,7 +54,7 @@ app.get("/script", (req, res) => {
 });
 
 // ---- DASHBOARD ----
-app.get("/dashboard", (req, res) => {
+app.get("/dashboard", checkAuth, (req, res) => {
     let rows = "";
     for (let k in keys) {
         const d = keys[k];
@@ -59,14 +69,17 @@ app.get("/dashboard", (req, res) => {
             <td style="display:flex;gap:6px;flex-wrap:wrap">
                 <form method="POST" action="/revoke" style="display:inline">
                     <input type="hidden" name="key" value="${k}">
+                    <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
                     <button type="submit">Revoke</button>
                 </form>
                 <form method="POST" action="/reset-hwid" style="display:inline">
                     <input type="hidden" name="key" value="${k}">
+                    <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
                     <button type="submit">Reset HWID</button>
                 </form>
                 <form method="POST" action="/delete-key" style="display:inline">
                     <input type="hidden" name="key" value="${k}">
+                    <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
                     <button type="submit" style="color:#f87171">Delete</button>
                 </form>
             </td>
@@ -106,10 +119,10 @@ app.get("/dashboard", (req, res) => {
 <p class="sub">Manage your license keys</p>
 
 <div class="toolbar">
-  <a href="/export" style="text-decoration:none">
+  <a href="/export?pass=${DASHBOARD_PASS}" style="text-decoration:none">
     <button class="blue">⬇ Export Keys</button>
   </a>
-  <form method="POST" action="/import" enctype="multipart/form-data" style="display:inline;position:relative">
+  <form method="POST" action="/import?pass=${DASHBOARD_PASS}" enctype="multipart/form-data" style="display:inline;position:relative">
     <label style="cursor:pointer">
       <button type="button" class="blue" onclick="this.parentElement.querySelector('input').click()">⬆ Import Keys</button>
       <input type="file" name="file" accept=".json" style="display:none" onchange="this.parentElement.submit()">
@@ -125,6 +138,7 @@ app.get("/dashboard", (req, res) => {
 <div class="section">
   <h2>⚡ Generate Key</h2>
   <form method="POST" action="/generate-key">
+    <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
     <div class="row">
       <select name="days">
         <option value="1">1 Day</option>
@@ -140,6 +154,7 @@ app.get("/dashboard", (req, res) => {
 <div class="section">
   <h2>✏️ Add Custom Key</h2>
   <form method="POST" action="/add-key">
+    <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
     <div class="row">
       <input type="text" name="key" placeholder="e.g. MYKEY-001" required>
       <select name="days">
@@ -155,10 +170,10 @@ app.get("/dashboard", (req, res) => {
 
 <div class="section">
   <h2>📦 Script URL</h2>
-  <p style="color:#555;font-size:12px;margin-bottom:12px">Raw script URL to load for all valid keys. Update anytime without touching the Lua loader.</p>
   <form method="POST" action="/set-script">
+    <input type="hidden" name="pass" value="${DASHBOARD_PASS}">
     <div class="row">
-      <input type="text" name="url" value="${scriptUrl}" style="width:420px" placeholder="https://pastebin.com/raw/...">
+      <input type="text" name="url" value="${scriptUrl}" style="width:420px">
       <button type="submit" class="green">Update</button>
     </div>
   </form>
@@ -170,58 +185,58 @@ app.get("/dashboard", (req, res) => {
 });
 
 // ---- GENERATE KEY ----
-app.post("/generate-key", (req, res) => {
+app.post("/generate-key", checkAuth, (req, res) => {
     const { days } = req.body;
     const key = generateKey();
     keys[key] = { hwid: null, roblox: null, expires: Date.now() + 1000*60*60*24 * parseInt(days || 7) };
-    res.redirect("/dashboard");
+    res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 // ---- ADD CUSTOM KEY ----
-app.post("/add-key", (req, res) => {
+app.post("/add-key", checkAuth, (req, res) => {
     const { key, days } = req.body;
-    if (!key) return res.redirect("/dashboard");
+    if (!key) return res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
     keys[key] = { hwid: null, roblox: null, expires: Date.now() + 1000*60*60*24 * parseInt(days || 7) };
-    res.redirect("/dashboard");
+    res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 // ---- REVOKE ----
-app.post("/revoke", (req, res) => {
+app.post("/revoke", checkAuth, (req, res) => {
     const { key } = req.body;
     if (keys[key]) keys[key].revoked = true;
-    res.redirect("/dashboard");
+    res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 // ---- RESET HWID ----
-app.post("/reset-hwid", (req, res) => {
+app.post("/reset-hwid", checkAuth, (req, res) => {
     const { key } = req.body;
     if (keys[key]) { keys[key].hwid = null; keys[key].roblox = null; }
-    res.redirect("/dashboard");
+    res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 // ---- DELETE ----
-app.post("/delete-key", (req, res) => {
+app.post("/delete-key", checkAuth, (req, res) => {
     const { key } = req.body;
     delete keys[key];
-    res.redirect("/dashboard");
+    res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 // ---- SET SCRIPT URL ----
-app.post("/set-script", (req, res) => {
+app.post("/set-script", checkAuth, (req, res) => {
     const { url } = req.body;
     if (url) scriptUrl = url;
-    res.redirect("/dashboard");
+    res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
-// ---- EXPORT KEYS ----
-app.get("/export", (req, res) => {
+// ---- EXPORT ----
+app.get("/export", checkAuth, (req, res) => {
     res.setHeader("Content-Disposition", "attachment; filename=keys.json");
     res.setHeader("Content-Type", "application/json");
     res.send(JSON.stringify(keys, null, 2));
 });
 
-// ---- IMPORT KEYS ----
-app.post("/import", express.raw({ type: "*/*", limit: "1mb" }), (req, res) => {
+// ---- IMPORT ----
+app.post("/import", checkAuth, express.raw({ type: "*/*", limit: "1mb" }), (req, res) => {
     try {
         const text = req.body.toString();
         const start = text.indexOf("{");
@@ -232,7 +247,7 @@ app.post("/import", express.raw({ type: "*/*", limit: "1mb" }), (req, res) => {
     } catch(e) {
         console.error("Import failed:", e);
     }
-    res.redirect("/dashboard");
+    res.redirect("/dashboard?pass=" + DASHBOARD_PASS);
 });
 
 app.listen(3000, () => console.log("Server running"));
