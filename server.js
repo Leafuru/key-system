@@ -1,12 +1,14 @@
 const express = require("express");
 const https = require("https");
 const crypto = require("crypto");
+const multer = require("multer");
 const app = express();
+const upload = multer({ storage: multer.memoryStorage() });
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const DASHBOARD_PASS = "LEAFISTHEGOAT123@"; // change this
-
+const DASHBOARD_PASS = "LEAFISTHEGOAT123"; // change this, you shared the old one publicly
 let scriptUrl = "https://pastebin.com/raw/YOURPASTEBINID";
 let keys = {};
 
@@ -122,7 +124,7 @@ app.get("/dashboard", checkAuth, (req, res) => {
   <a href="/export?pass=${DASHBOARD_PASS}" style="text-decoration:none">
     <button class="blue">⬇ Export Keys</button>
   </a>
-  <form method="POST" action="/import?pass=${DASHBOARD_PASS}" enctype="multipart/form-data" style="display:inline;position:relative">
+  <form method="POST" action="/import?pass=${DASHBOARD_PASS}" enctype="multipart/form-data" style="display:inline">
     <label style="cursor:pointer">
       <button type="button" class="blue" onclick="this.parentElement.querySelector('input').click()">⬆ Import Keys</button>
       <input type="file" name="file" accept=".json" style="display:none" onchange="this.parentElement.submit()">
@@ -236,13 +238,9 @@ app.get("/export", checkAuth, (req, res) => {
 });
 
 // ---- IMPORT ----
-app.post("/import", checkAuth, express.raw({ type: "*/*", limit: "1mb" }), (req, res) => {
+app.post("/import", checkAuth, upload.single("file"), (req, res) => {
     try {
-        const text = req.body.toString();
-        const start = text.indexOf("{");
-        const end = text.lastIndexOf("}");
-        const json = text.substring(start, end + 1);
-        const imported = JSON.parse(json);
+        const imported = JSON.parse(req.file.buffer.toString());
         keys = { ...keys, ...imported };
     } catch(e) {
         console.error("Import failed:", e);
